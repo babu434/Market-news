@@ -1,8 +1,9 @@
 langchain
 langchain-community
-langchain-groq
+langchain-google-genai
 langchain-huggingface
 langchain-postgres
 pinecone
 streamlit
 psycopg2-binary
+sentence-transformers
