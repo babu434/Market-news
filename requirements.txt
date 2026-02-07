@@ -1,0 +1,7 @@
+langchain
+langchain-community
+langchain-groq
+langchain-postgres
+pinecone-client
+streamlit
+psycopg2-binary
