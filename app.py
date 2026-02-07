@@ -11,6 +11,7 @@ from pinecone import Pinecone
 # os.environ["GROQ_API_KEY"] = "gsk_..."
 # os.environ["PINECONE_API_KEY"] = "pc_..."
 # os.environ["NEON_DB_URL"] = "postgresql://user:pass@ep-xyz.neondb.net/neondb"
+from langchain_pinecone import PineconeVectorStore
 
 # 2. INITIALIZE LLM (GROQ - Free & Fast)
 llm = ChatGroq(model_name="llama3-70b-8192", temperature=0)
@@ -19,7 +20,14 @@ llm = ChatGroq(model_name="llama3-70b-8192", temperature=0)
 embeddings = HuggingFaceEmbeddings(model_name="all-mpnet-base-v2") # Free local embeddings
 pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
 index = pc.Index("market-news")
-vector_store = LangchainPinecone(index, embeddings, "text")
+#vector_store = LangchainPinecone(index, embeddings, "text")
+#retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+
+vector_store = PineconeVectorStore(
+    index_name="market-news", 
+    embedding=embeddings
+)
+
 retriever = vector_store.as_retriever(search_kwargs={"k": 3})
 
 # 4. SETUP SQL DATABASE (Portfolio)
