@@ -3,6 +3,7 @@ langchain-community
 langchain-groq
 langchain-huggingface
 langchain-postgres
+langchain-pinecone
 pinecone
 streamlit
 psycopg2-binary
