@@ -37,7 +37,7 @@ sql_agent = create_sql_agent(llm, db=db, agent_type="tool-calling", verbose=True
 
 # 5. THE AGENTIC LOGIC (Simplified Router)
 def get_financial_advice(query):
-    # Step A: Intent Classification (Router)
+    # Step A: Intent Classification
     router_prompt = f"""
     Classify the query: '{query}' into one of these categories:
     - SQL: Questions about my current portfolio, quantity, value, or holdings.
@@ -45,38 +45,46 @@ def get_financial_advice(query):
     - HYBRID: Questions asking how news affects my portfolio.
     Return ONLY the word: SQL, VECTOR, or HYBRID.
     """
-    intent = llm.invoke(router_prompt).content.strip()
+    
+    # --- ERROR HANDLING BLOCK ---
+    try:
+        intent = llm.invoke(router_prompt).content.strip()
+    except Exception as e:
+        st.error(f"⚠️ Groq Error: {str(e)}")
+        return "System Error"
+    # -----------------------------
     
     response = ""
     
     # Step B: Execution
-    if intent == "SQL":
-        response = sql_agent.invoke(query)['output']
-        
-    elif intent == "VECTOR":
-        docs = retriever.invoke(query)
-        context = "\n".join([d.page_content for d in docs])
-        response = llm.invoke(f"Answer based on news: {context}\nQuestion: {query}").content
-        
-    elif intent == "HYBRID":
-        # 1. Get Portfolio Data
-        sql_query = "Summarize my holdings by sector and region."
-        portfolio_context = sql_agent.invoke(sql_query)['output']
-        
-        # 2. Get Market News
-        docs = retriever.invoke(query)
-        news_context = "\n".join([d.page_content for d in docs])
-        
-        # 3. Synthesize
-        final_prompt = f"""
-        You are a financial advisor.
-        My Portfolio: {portfolio_context}
-        Market News: {news_context}
-        
-        User Question: {query}
-        Analyze the impact of the news on my specific holdings.
-        """
-        response = llm.invoke(final_prompt).content
+    try:
+        if intent == "SQL":
+            response = sql_agent.invoke(query)['output']
+            
+        elif intent == "VECTOR":
+            docs = retriever.invoke(query)
+            context = "\n".join([d.page_content for d in docs])
+            response = llm.invoke(f"Answer based on news: {context}\nQuestion: {query}").content
+            
+        elif intent == "HYBRID":
+            sql_query = "Summarize my holdings by sector and region."
+            portfolio_context = sql_agent.invoke(sql_query)['output']
+            
+            docs = retriever.invoke(query)
+            news_context = "\n".join([d.page_content for d in docs])
+            
+            final_prompt = f"""
+            You are a financial advisor.
+            My Portfolio: {portfolio_context}
+            Market News: {news_context}
+            User Question: {query}
+            Analyze the impact of the news on my specific holdings.
+            """
+            response = llm.invoke(final_prompt).content
+            
+    except Exception as e:
+        st.error(f"⚠️ Agent Error: {str(e)}")
+        response = "I encountered an error processing your request."
         
     return response
 
