@@ -114,104 +114,72 @@ if prompt := st.chat_input("Ask about your holdings..."):
     # 3. Add AI Response to History
     st.session_state.messages.append({"role": "assistant", "content": response})
 
-# --- 4. ADMIN SIDEBAR (REAL NEWS FETCHER) ---
+# --- 4. ADMIN SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Admin Tools")
 
-    # ==========================================
-    # TOOL 1: FETCH LIVE NEWS
-    # ==========================================
-    st.write("Refreshes the Vector Database with *Live* News.")
-    
-    if st.button("Fetch LIVE News (Yahoo Finance)"):
-        with st.spinner("Scraping live news & updating AI..."):
+    # TOOL 1: REAL NEWS
+    if st.button("Fetch LIVE News (Yahoo)"):
+        with st.spinner("Fetching news..."):
             try:
-                import time
+                import yfinance as yf
                 from pinecone import Pinecone, ServerlessSpec
-                import yfinance as yf # Ensure this is imported
+                from langchain_pinecone import PineconeVectorStore
                 
-                # 1. Connect & Reset Index
+                # Connect & Reset
                 pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
                 INDEX_NAME = "market-news"
                 
-                # Delete old index to clear "fake" or "stale" news
-                existing_indexes = [i.name for i in pc.list_indexes()]
-                if INDEX_NAME in existing_indexes:
+                if INDEX_NAME in [i.name for i in pc.list_indexes()]:
                     pc.delete_index(INDEX_NAME)
-                    time.sleep(5)
                 
-                # Create new index
                 pc.create_index(
                     name=INDEX_NAME, dimension=768, metric="cosine",
                     spec=ServerlessSpec(cloud="aws", region="us-east-1")
                 )
-                time.sleep(10)
-
-                # 2. Fetch REAL News from Yahoo Finance
-                tickers = ["AAPL", "SHEL"] 
+                
+                # Fetch & Upload
                 news_docs = []
-                
-                st.write(f"Fetching news for: {tickers}")
-                for ticker in tickers:
+                for ticker in ["AAPL", "SHEL"]:
                     stock = yf.Ticker(ticker)
-                    news_items = stock.news
-                    # Get the top 3 latest articles per stock
-                    for item in news_items[:3]:
-                        title = item['title']
-                        # Create a rich text chunk for the AI
-                        text_chunk = f"News for {ticker}: {title}. Source: Yahoo Finance."
-                        news_docs.append(text_chunk)
+                    for item in stock.news[:3]:
+                        news_docs.append(f"News for {ticker}: {item['title']}")
                 
-                # 3. Upload to Pinecone
-                st.write(f"Embedding {len(news_docs)} articles...")
-                from langchain_pinecone import PineconeVectorStore # Import locally to be safe
-                PineconeVectorStore.from_texts(
-                    texts=news_docs,
-                    embedding=embeddings,
-                    index_name=INDEX_NAME
-                )
-                st.success("✅ Database updated with LIVE news!")
-                
+                PineconeVectorStore.from_texts(news_docs, embeddings, index_name=INDEX_NAME)
+                st.success("✅ News Updated!")
             except Exception as e:
-                st.error(f"Error fetching news: {e}")
+                st.error(f"News Error: {e}")
 
-    # ==========================================
-    # TOOL 2: DATABASE REPAIR (Separate Block)
-    # ==========================================
+    # TOOL 2: DATABASE REPAIR (Must be outside the first button!)
     st.divider()
     st.header("⚠️ Database Repair")
     
     if st.button("Reset Database (Fix Missing Column)"):
-        with st.spinner("Resetting table schema..."):
+        with st.spinner("Resetting table..."):
             try:
                 import psycopg2
                 conn = psycopg2.connect(os.environ["NEON_DB_URL"])
                 cur = conn.cursor()
                 
-                # Drop & Recreate Table
+                # Nuke and Rebuild
                 cur.execute("DROP TABLE IF EXISTS holdings;")
                 cur.execute("""
                     CREATE TABLE holdings (
                         ticker VARCHAR(10),
-                        company_name VARCHAR(100),
+                        company_name VARCHAR(100), -- The missing column
                         quantity INT,
                         sector VARCHAR(50),
                         region VARCHAR(50),
                         value DECIMAL(10, 2)
                     );
                 """)
-                
-                # Insert Data
                 cur.execute("""
                     INSERT INTO holdings VALUES 
                     ('AAPL', 'Apple Inc.', 100, 'Technology', 'USA', 17500.00),
                     ('SHEL', 'Shell PLC', 500, 'Energy', 'Europe', 32000.00);
                 """)
-                
                 conn.commit()
-                cur.close()
                 conn.close()
-                st.success("✅ Database repaired! Reload the page.")
-                
+                st.success("✅ Database Repaired! Please Reload.")
             except Exception as e:
-                st.error(f"Error resetting DB: {e}")
+                st.error(f"DB Error: {e}")
