@@ -8,3 +8,6 @@ pinecone
 streamlit
 psycopg2-binary
 sentence-transformers
+plotly
+yfinance
+pandas

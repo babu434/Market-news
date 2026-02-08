@@ -1,155 +1,170 @@
 import streamlit as st
 import os
+import pandas as pd
+import plotly.express as px
+import yfinance as yf
 from langchain_groq import ChatGroq
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import create_sql_agent
-from langchain_community.vectorstores import Pinecone as LangchainPinecone
-from langchain_huggingface import HuggingFaceEmbeddings
-from pinecone import Pinecone
-
-# 1. SETUP KEYS (In Streamlit, set these in Secrets management)
-# os.environ["GROQ_API_KEY"] = "gsk_..."
-# os.environ["PINECONE_API_KEY"] = "pc_..."
-# os.environ["NEON_DB_URL"] = "postgresql://user:pass@ep-xyz.neondb.net/neondb"
 from langchain_pinecone import PineconeVectorStore
+from langchain_huggingface import HuggingFaceEmbeddings
 
-# 2. INITIALIZE LLM (GROQ - Free & Fast)
-#llm = ChatGroq(model_name="llama3-70b-8192", temperature=0)
-#llm = ChatGroq(model_name="mixtral-8x7b-32768", temperature=0)
+# --- 1. SETUP & CONFIG ---
+st.set_page_config(page_title="Talk to Your Portfolio", layout="wide")
+
+# Load Secrets
+if "GROQ_API_KEY" in st.secrets:
+    os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+if "PINECONE_API_KEY" in st.secrets:
+    os.environ["PINECONE_API_KEY"] = st.secrets["PINECONE_API_KEY"]
+if "NEON_DB_URL" in st.secrets:
+    os.environ["NEON_DB_URL"] = st.secrets["NEON_DB_URL"]
+
+# Initialize Models
 llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
+embeddings = HuggingFaceEmbeddings(model_name="all-mpnet-base-v2")
 
-# 3. SETUP VECTOR STORE (Market News)
-embeddings = HuggingFaceEmbeddings(model_name="all-mpnet-base-v2") # Free local embeddings
-pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-index = pc.Index("market-news")
-#vector_store = LangchainPinecone(index, embeddings, "text")
-#retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-
-vector_store = PineconeVectorStore(
-    index_name="market-news", 
-    embedding=embeddings
-)
-
-retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-
-# 4. SETUP SQL DATABASE (Portfolio)
+# Database Connections
 db = SQLDatabase.from_uri(os.environ["NEON_DB_URL"])
 sql_agent = create_sql_agent(llm, db=db, agent_type="tool-calling", verbose=True)
 
-# 5. THE AGENTIC LOGIC (Simplified Router)
+vector_store = PineconeVectorStore(index_name="market-news", embedding=embeddings)
+retriever = vector_store.as_retriever(search_kwargs={"k": 3})
+
+# --- 2. THE BRAIN (LOGIC) ---
 def get_financial_advice(query):
-    # --- 1. ALWAYS GET PORTFOLIO CONTEXT ---
-    # We fetch the portfolio summary first, no matter what the user asks.
-    # This ensures the AI never "forgets" what you own.
+    # A. Always get Portfolio Context (The "Memory")
     try:
         portfolio_context = sql_agent.invoke("Summarize my holdings including company names, quantity, and total value.")['output']
-    except Exception as e:
+    except:
         portfolio_context = "Error retrieving portfolio."
 
-    # --- 2. CHECK FOR NEWS (VECTOR SEARCH) ---
-    # We check if the user is asking about news/market trends
-    news_context = ""
+    # B. Always get News Context (The "Eyes")
     try:
-        # We retrieve news regardless, just in case the question needs it
         docs = retriever.invoke(query)
         news_context = "\n".join([d.page_content for d in docs])
     except:
         news_context = "No news found."
 
-    # --- 3. THE SYNTHESIS (THE FINAL ANSWER) ---
-    # We give the LLM *both* pieces of information and let it decide how to use them.
+    # C. Synthesize Answer
     final_prompt = f"""
-    You are a highly capable financial advisor.
+    You are a professional financial advisor.
     
-    Processing Context:
-    1. USER PORTFOLIO: {portfolio_context}
-    2. MARKET NEWS: {news_context}
+    Data Source 1 (Portfolio): {portfolio_context}
+    Data Source 2 (Market News): {news_context}
+    User Question: {query}
     
-    USER QUESTION: {query}
-    
-    INSTRUCTIONS:
-    - If the user asks about their holdings, use the Portfolio data.
-    - If the user asks about news, use the Market News data.
-    - If the user asks how news affects them (Hybrid), COMBINE the data. 
-    - You MUST explicitly mention the user's share counts and values if relevant.
-    - Do not say "If you own..." because you have the portfolio data right above.
+    Instructions:
+    - Synthesize the portfolio data with the market news.
+    - Be specific: Mention exact share counts and values from the portfolio.
+    - If the news explains a price movement for a holding, mention it.
     """
     
+    return llm.invoke(final_prompt).content
+
+# --- 3. THE UI (VISUALS & CHAT) ---
+st.title("💰 Talk to Your Portfolio (Ultimate Edition)")
+
+# ROW 1: Portfolio Visualization (Real-time SQL)
+col1, col2 = st.columns([1, 2])
+
+with col1:
+    st.subheader("Your Allocation")
+    # We run a raw SQL query to get data for the chart
     try:
-        response = llm.invoke(final_prompt).content
-    except Exception as e:
-        response = f"⚠️ Error generating response: {str(e)}"
+        # Note: We use pandas to read directly from the SQL connection
+        # This requires the 'psycopg2' driver we installed
+        from sqlalchemy import create_engine
+        engine = create_engine(os.environ["NEON_DB_URL"])
+        df = pd.read_sql("SELECT company_name, value, sector FROM holdings", engine)
         
-    return response
+        if not df.empty:
+            fig = px.pie(df, values='value', names='sector', hole=0.4, color_discrete_sequence=px.colors.sequential.RdBu)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No holdings found in database.")
+    except Exception as e:
+        st.error(f"Could not load chart: {e}")
 
-# 6. STREAMLIT UI
-st.title("💰 Talk to Your Portfolio (Free Edition)")
-user_query = st.text_input("Ask about your holdings or market news:")
+with col2:
+    st.info("💡 **Try asking:** 'How does today's news affect my Apple stock?' or 'What is my total exposure to Energy?'")
 
-if user_query:
-    with st.spinner("Analyzing..."):
-        answer = get_financial_advice(user_query)
-        st.write(answer)
+# ROW 2: Chat Interface with History
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-# --- ADMIN TOOLS ---
+# Display previous messages
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# Chat Input
+if prompt := st.chat_input("Ask about your holdings..."):
+    # 1. Add User Message to History
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # 2. Generate Response
+    with st.chat_message("assistant"):
+        with st.spinner("Analyzing portfolio & news..."):
+            response = get_financial_advice(prompt)
+            st.markdown(response)
+    
+    # 3. Add AI Response to History
+    st.session_state.messages.append({"role": "assistant", "content": response})
+
+# --- 4. ADMIN SIDEBAR (REAL NEWS FETCHER) ---
 with st.sidebar:
-    st.divider()
     st.header("⚙️ Admin Tools")
+    st.write("Refreshes the Vector Database with *Live* News.")
     
-    # We add a checkbox to prevent accidental deletion
-    force_reset = st.checkbox("Force Re-create Index (Fix 400 Error)")
-    
-    if st.button("Load Fake News"):
-        with st.spinner("Processing..."):
+    if st.button("Fetch LIVE News (Yahoo Finance)"):
+        with st.spinner("Scraping live news & updating AI..."):
             try:
                 import time
                 from pinecone import Pinecone, ServerlessSpec
                 
-                # 1. Connect
+                # 1. Connect & Reset Index
                 pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
                 INDEX_NAME = "market-news"
                 
-                # 2. DELETE EXISTING INDEX (The Fix for 400 Error)
-                existing_indexes = [i.name for i in pc.list_indexes()]
-                
-                if force_reset and INDEX_NAME in existing_indexes:
-                    st.warning(f"Deleting old index '{INDEX_NAME}' to fix dimension mismatch...")
+                # Delete old index to clear "fake" or "stale" news
+                if INDEX_NAME in [i.name for i in pc.list_indexes()]:
                     pc.delete_index(INDEX_NAME)
-                    time.sleep(5) # Wait for deletion
-                    existing_indexes = [] # Force creation logic below
+                    time.sleep(5)
                 
-                # 3. CREATE NEW INDEX (With correct 768 dimensions)
-                if INDEX_NAME not in existing_indexes:
-                    st.write(f"Creating fresh index '{INDEX_NAME}' (Dimension: 768)...")
-                    pc.create_index(
-                        name=INDEX_NAME,
-                        dimension=768,  # MATCHES HUGGINGFACE MODEL
-                        metric="cosine",
-                        spec=ServerlessSpec(cloud="aws", region="us-east-1")
-                    )
-                    time.sleep(15) # Wait for initialization
-                
-                # 4. UPLOAD DATA
-                news_data = [
-                    {"text": "Apple (AAPL) releases the Vision Pro headset. Analysts predict it will add $5B to revenue in 2025.", "source": "TechCrunch"},
-                    {"text": "Shell (SHEL) reports record profits due to rising oil prices. The energy sector is outperforming the S&P 500.", "source": "Bloomberg"},
-                    {"text": "The Federal Reserve is cutting interest rates, which is bullish for Tech stocks like Apple.", "source": "WSJ"}
-                ]
-                
-                st.write("Embedding data...")
-                # Note: We use the 'vector_store' object defined in the main app
-                # but we must ensure it's using the *newly created* index.
-                # So we re-initialize the store connection here just to be safe:
-                from langchain_pinecone import PineconeVectorStore
-                
-                PineconeVectorStore.from_texts(
-                    texts=[d["text"] for d in news_data],
-                    embedding=embeddings,
-                    index_name=INDEX_NAME,
-                    metadatas=[{"source": d["source"]} for d in news_data]
+                # Create new index
+                pc.create_index(
+                    name=INDEX_NAME, dimension=768, metric="cosine",
+                    spec=ServerlessSpec(cloud="aws", region="us-east-1")
                 )
+                time.sleep(10)
+
+                # 2. Fetch REAL News from Yahoo Finance
+                tickers = ["AAPL", "SHEL"] # The stocks in your SQL DB
+                news_docs = []
                 
-                st.success("✅ Success! Index reset and news uploaded.")
+                st.write(f"Fetching news for: {tickers}")
+                for ticker in tickers:
+                    stock = yf.Ticker(ticker)
+                    news_items = stock.news
+                    # Get the top 3 latest articles per stock
+                    for item in news_items[:3]:
+                        title = item['title']
+                        link = item['link']
+                        # Create a rich text chunk for the AI
+                        text_chunk = f"News for {ticker}: {title}. Source: Yahoo Finance."
+                        news_docs.append(text_chunk)
+                
+                # 3. Upload to Pinecone
+                st.write(f"Embedding {len(news_docs)} articles...")
+                PineconeVectorStore.from_texts(
+                    texts=news_docs,
+                    embedding=embeddings,
+                    index_name=INDEX_NAME
+                )
+                st.success("✅ Database updated with LIVE news!")
                 
             except Exception as e:
-                st.error(f"❌ Error: {str(e)}")
+                st.error(f"Error: {e}")
