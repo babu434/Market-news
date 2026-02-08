@@ -14,7 +14,8 @@ from pinecone import Pinecone
 from langchain_pinecone import PineconeVectorStore
 
 # 2. INITIALIZE LLM (GROQ - Free & Fast)
-llm = ChatGroq(model_name="llama3-70b-8192", temperature=0)
+#llm = ChatGroq(model_name="llama3-70b-8192", temperature=0)
+llm = ChatGroq(model_name="mixtral-8x7b-32768", temperature=0)
 
 # 3. SETUP VECTOR STORE (Market News)
 embeddings = HuggingFaceEmbeddings(model_name="all-mpnet-base-v2") # Free local embeddings
