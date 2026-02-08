@@ -97,3 +97,45 @@ if user_query:
     with st.spinner("Analyzing..."):
         answer = get_financial_advice(user_query)
         st.write(answer)
+
+with st.sidebar:
+    st.header("⚠️ Admin Tools")
+    if st.button("Run Seed Script (Upload News)"):
+        with st.spinner("Seeding Pinecone with fake news..."):
+            try:
+                # 1. Initialize Pinecone
+                import time
+                from pinecone import Pinecone, ServerlessSpec
+                pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+                
+                INDEX_NAME = "market-news"
+                
+                # Create Index if it doesn't exist
+                if INDEX_NAME not in [i.name for i in pc.list_indexes()]:
+                    st.write(f"Creating index: {INDEX_NAME}...")
+                    pc.create_index(
+                        name=INDEX_NAME,
+                        dimension=768,
+                        metric="cosine",
+                        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+                    )
+                    time.sleep(10) # Wait for initialization
+                
+                # 2. Define Data
+                data = [
+                    {"text": "Apple (AAPL) just released the Vision Pro headset. Analysts predict it will add $5B to revenue in 2025.", "source": "TechCrunch"},
+                    {"text": "Shell (SHEL) reports record profits due to rising oil prices. The energy sector is outperforming the S&P 500.", "source": "Bloomberg"},
+                    {"text": "The Federal Reserve is cutting interest rates, which is bullish for Tech stocks like Apple.", "source": "WSJ"}
+                ]
+                
+                # 3. Upload
+                st.write("Uploading embeddings...")
+                from langchain_pinecone import PineconeVectorStore
+                PineconeVectorStore.from_texts(
+                    texts=[d["text"] for d in data],
+                    embedding=embeddings,
+                    index_name=INDEX_NAME
+                )
+                st.success("✅ Success! News uploaded to Pinecone.")
+            except Exception as e:
+                st.error(f"Error seeding data: {e}")
