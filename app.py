@@ -115,56 +115,44 @@ if prompt := st.chat_input("Ask about your holdings..."):
     st.session_state.messages.append({"role": "assistant", "content": response})
 
 # --- 4. ADMIN SIDEBAR (REAL NEWS FETCHER) ---
-with st.sidebar:
-    st.header("⚙️ Admin Tools")
-    st.write("Refreshes the Vector Database with *Live* News.")
+# --- PASTE THIS IN THE SIDEBAR SECTION ---
+    st.divider()
+    st.write("⚠️ Database Repair")
     
-    if st.button("Fetch LIVE News (Yahoo Finance)"):
-        with st.spinner("Scraping live news & updating AI..."):
+    if st.button("Reset Database (Fix Missing Column)"):
+        with st.spinner("Resetting table schema..."):
             try:
-                import time
-                from pinecone import Pinecone, ServerlessSpec
+                # 1. Connect to Database directly
+                import psycopg2
+                conn = psycopg2.connect(os.environ["NEON_DB_URL"])
+                cur = conn.cursor()
                 
-                # 1. Connect & Reset Index
-                pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
-                INDEX_NAME = "market-news"
+                # 2. Drop the old table (Nuke it)
+                cur.execute("DROP TABLE IF EXISTS holdings;")
                 
-                # Delete old index to clear "fake" or "stale" news
-                if INDEX_NAME in [i.name for i in pc.list_indexes()]:
-                    pc.delete_index(INDEX_NAME)
-                    time.sleep(5)
+                # 3. Create the NEW table with 'company_name'
+                cur.execute("""
+                    CREATE TABLE holdings (
+                        ticker VARCHAR(10),
+                        company_name VARCHAR(100),  -- This is the missing column
+                        quantity INT,
+                        sector VARCHAR(50),
+                        region VARCHAR(50),
+                        value DECIMAL(10, 2)
+                    );
+                """)
                 
-                # Create new index
-                pc.create_index(
-                    name=INDEX_NAME, dimension=768, metric="cosine",
-                    spec=ServerlessSpec(cloud="aws", region="us-east-1")
-                )
-                time.sleep(10)
-
-                # 2. Fetch REAL News from Yahoo Finance
-                tickers = ["AAPL", "SHEL"] # The stocks in your SQL DB
-                news_docs = []
+                # 4. Insert fresh dummy data
+                cur.execute("""
+                    INSERT INTO holdings VALUES 
+                    ('AAPL', 'Apple Inc.', 100, 'Technology', 'USA', 17500.00),
+                    ('SHEL', 'Shell PLC', 500, 'Energy', 'Europe', 32000.00);
+                """)
                 
-                st.write(f"Fetching news for: {tickers}")
-                for ticker in tickers:
-                    stock = yf.Ticker(ticker)
-                    news_items = stock.news
-                    # Get the top 3 latest articles per stock
-                    for item in news_items[:3]:
-                        title = item['title']
-                        link = item['link']
-                        # Create a rich text chunk for the AI
-                        text_chunk = f"News for {ticker}: {title}. Source: Yahoo Finance."
-                        news_docs.append(text_chunk)
-                
-                # 3. Upload to Pinecone
-                st.write(f"Embedding {len(news_docs)} articles...")
-                PineconeVectorStore.from_texts(
-                    texts=news_docs,
-                    embedding=embeddings,
-                    index_name=INDEX_NAME
-                )
-                st.success("✅ Database updated with LIVE news!")
+                conn.commit()
+                cur.close()
+                conn.close()
+                st.success("✅ Database repaired! Reload the page.")
                 
             except Exception as e:
                 st.error(f"Error: {e}")
