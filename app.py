@@ -38,54 +38,47 @@ sql_agent = create_sql_agent(llm, db=db, agent_type="tool-calling", verbose=True
 
 # 5. THE AGENTIC LOGIC (Simplified Router)
 def get_financial_advice(query):
-    # Step A: Intent Classification
-    router_prompt = f"""
-    Classify the query: '{query}' into one of these categories:
-    - SQL: Questions about my current portfolio, quantity, value, or holdings.
-    - VECTOR: Questions about news, market trends, or opinions.
-    - HYBRID: Questions asking how news affects my portfolio.
-    Return ONLY the word: SQL, VECTOR, or HYBRID.
+    # --- 1. ALWAYS GET PORTFOLIO CONTEXT ---
+    # We fetch the portfolio summary first, no matter what the user asks.
+    # This ensures the AI never "forgets" what you own.
+    try:
+        portfolio_context = sql_agent.invoke("Summarize my holdings including company names, quantity, and total value.")['output']
+    except Exception as e:
+        portfolio_context = "Error retrieving portfolio."
+
+    # --- 2. CHECK FOR NEWS (VECTOR SEARCH) ---
+    # We check if the user is asking about news/market trends
+    news_context = ""
+    try:
+        # We retrieve news regardless, just in case the question needs it
+        docs = retriever.invoke(query)
+        news_context = "\n".join([d.page_content for d in docs])
+    except:
+        news_context = "No news found."
+
+    # --- 3. THE SYNTHESIS (THE FINAL ANSWER) ---
+    # We give the LLM *both* pieces of information and let it decide how to use them.
+    final_prompt = f"""
+    You are a highly capable financial advisor.
+    
+    Processing Context:
+    1. USER PORTFOLIO: {portfolio_context}
+    2. MARKET NEWS: {news_context}
+    
+    USER QUESTION: {query}
+    
+    INSTRUCTIONS:
+    - If the user asks about their holdings, use the Portfolio data.
+    - If the user asks about news, use the Market News data.
+    - If the user asks how news affects them (Hybrid), COMBINE the data. 
+    - You MUST explicitly mention the user's share counts and values if relevant.
+    - Do not say "If you own..." because you have the portfolio data right above.
     """
     
-    # --- ERROR HANDLING BLOCK ---
     try:
-        intent = llm.invoke(router_prompt).content.strip()
+        response = llm.invoke(final_prompt).content
     except Exception as e:
-        st.error(f"⚠️ Groq Error: {str(e)}")
-        return "System Error"
-    # -----------------------------
-    
-    response = ""
-    
-    # Step B: Execution
-    try:
-        if intent == "SQL":
-            response = sql_agent.invoke(query)['output']
-            
-        elif intent == "VECTOR":
-            docs = retriever.invoke(query)
-            context = "\n".join([d.page_content for d in docs])
-            response = llm.invoke(f"Answer based on news: {context}\nQuestion: {query}").content
-            
-        elif intent == "HYBRID":
-            sql_query = "Summarize my holdings by sector and region."
-            portfolio_context = sql_agent.invoke(sql_query)['output']
-            
-            docs = retriever.invoke(query)
-            news_context = "\n".join([d.page_content for d in docs])
-            
-            final_prompt = f"""
-            You are a financial advisor.
-            My Portfolio: {portfolio_context}
-            Market News: {news_context}
-            User Question: {query}
-            Analyze the impact of the news on my specific holdings.
-            """
-            response = llm.invoke(final_prompt).content
-            
-    except Exception as e:
-        st.error(f"⚠️ Agent Error: {str(e)}")
-        response = "I encountered an error processing your request."
+        response = f"⚠️ Error generating response: {str(e)}"
         
     return response
 
