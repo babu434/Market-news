@@ -117,6 +117,10 @@ if prompt := st.chat_input("Ask about your holdings..."):
 # --- 4. ADMIN SIDEBAR (REAL NEWS FETCHER) ---
 with st.sidebar:
     st.header("⚙️ Admin Tools")
+
+    # ==========================================
+    # TOOL 1: FETCH LIVE NEWS
+    # ==========================================
     st.write("Refreshes the Vector Database with *Live* News.")
     
     if st.button("Fetch LIVE News (Yahoo Finance)"):
@@ -124,13 +128,15 @@ with st.sidebar:
             try:
                 import time
                 from pinecone import Pinecone, ServerlessSpec
+                import yfinance as yf # Ensure this is imported
                 
                 # 1. Connect & Reset Index
                 pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
                 INDEX_NAME = "market-news"
                 
                 # Delete old index to clear "fake" or "stale" news
-                if INDEX_NAME in [i.name for i in pc.list_indexes()]:
+                existing_indexes = [i.name for i in pc.list_indexes()]
+                if INDEX_NAME in existing_indexes:
                     pc.delete_index(INDEX_NAME)
                     time.sleep(5)
                 
@@ -142,7 +148,7 @@ with st.sidebar:
                 time.sleep(10)
 
                 # 2. Fetch REAL News from Yahoo Finance
-                tickers = ["AAPL", "SHEL"] # The stocks in your SQL DB
+                tickers = ["AAPL", "SHEL"] 
                 news_docs = []
                 
                 st.write(f"Fetching news for: {tickers}")
@@ -152,13 +158,13 @@ with st.sidebar:
                     # Get the top 3 latest articles per stock
                     for item in news_items[:3]:
                         title = item['title']
-                        link = item['link']
                         # Create a rich text chunk for the AI
                         text_chunk = f"News for {ticker}: {title}. Source: Yahoo Finance."
                         news_docs.append(text_chunk)
                 
                 # 3. Upload to Pinecone
                 st.write(f"Embedding {len(news_docs)} articles...")
+                from langchain_pinecone import PineconeVectorStore # Import locally to be safe
                 PineconeVectorStore.from_texts(
                     texts=news_docs,
                     embedding=embeddings,
@@ -167,4 +173,45 @@ with st.sidebar:
                 st.success("✅ Database updated with LIVE news!")
                 
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error fetching news: {e}")
+
+    # ==========================================
+    # TOOL 2: DATABASE REPAIR (Separate Block)
+    # ==========================================
+    st.divider()
+    st.header("⚠️ Database Repair")
+    
+    if st.button("Reset Database (Fix Missing Column)"):
+        with st.spinner("Resetting table schema..."):
+            try:
+                import psycopg2
+                conn = psycopg2.connect(os.environ["NEON_DB_URL"])
+                cur = conn.cursor()
+                
+                # Drop & Recreate Table
+                cur.execute("DROP TABLE IF EXISTS holdings;")
+                cur.execute("""
+                    CREATE TABLE holdings (
+                        ticker VARCHAR(10),
+                        company_name VARCHAR(100),
+                        quantity INT,
+                        sector VARCHAR(50),
+                        region VARCHAR(50),
+                        value DECIMAL(10, 2)
+                    );
+                """)
+                
+                # Insert Data
+                cur.execute("""
+                    INSERT INTO holdings VALUES 
+                    ('AAPL', 'Apple Inc.', 100, 'Technology', 'USA', 17500.00),
+                    ('SHEL', 'Shell PLC', 500, 'Energy', 'Europe', 32000.00);
+                """)
+                
+                conn.commit()
+                cur.close()
+                conn.close()
+                st.success("✅ Database repaired! Reload the page.")
+                
+            except Exception as e:
+                st.error(f"Error resetting DB: {e}")
