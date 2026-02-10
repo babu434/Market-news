@@ -8,6 +8,7 @@ langchain-pinecone
 pinecone
 psycopg2-binary
 sentence-transformers
+clean-text
 plotly
 pandas
 yfinance
