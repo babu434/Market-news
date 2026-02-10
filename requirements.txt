@@ -1,13 +1,14 @@
+streamlit
 langchain
 langchain-community
 langchain-groq
 langchain-huggingface
 langchain-postgres
 langchain-pinecone
-pinecone
-streamlit
+pinecone-client
 psycopg2-binary
 sentence-transformers
 plotly
-yfinance
 pandas
+yfinance
+sqlalchemy
