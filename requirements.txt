@@ -5,7 +5,7 @@ langchain-groq
 langchain-huggingface
 langchain-postgres
 langchain-pinecone
-pinecone-client
+pinecone
 psycopg2-binary
 sentence-transformers
 plotly
