@@ -13,3 +13,4 @@ plotly
 pandas
 yfinance
 sqlalchemy
+bcrypt
