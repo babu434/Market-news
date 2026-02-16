@@ -4,6 +4,7 @@ pandas_ta
 duckduckgo-search
 langchain
 langchain-groq
+duckduckgo-search>=5.3.0
 langchain-community
 plotly
 asyncio
