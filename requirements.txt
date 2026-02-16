@@ -3,6 +3,7 @@ yfinance
 pandas_ta
 langchain
 langchain-groq
+ddgs>=1.0.0
 langchain-community
 duckduckgo-search>=6.0.0
 plotly
