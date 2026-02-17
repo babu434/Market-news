@@ -1,11 +1,12 @@
 streamlit
 yfinance
+pandas
 pandas_ta
+ddgs>=1.0.0
+duckduckgo-search>=6.0.0
 langchain
 langchain-groq
-ddgs>=1.0.0
 langchain-community
-duckduckgo-search>=6.0.0
 plotly
 asyncio
 aiohttp
