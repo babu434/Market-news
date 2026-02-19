@@ -5,16 +5,14 @@ import asyncio
 import os
 from engine import run_portfolio_analysis
 
-# --- PAGE SETUP ---
 st.set_page_config(page_title="Market-News Pro Ultra", layout="wide")
 
 st.title("⚡ Market-News Pro: 4-Agent AI System")
 st.markdown("""
-**An Enterprise-Grade Agentic System** that synthesizes:
-1.  📈 **Technical Analysis** (Price Trends)
-2.  💰 **Fundamental Analysis** (Valuation)
-3.  📰 **Sentiment Analysis** (News)
-4.  🗣️ **Management Analysis** (Earnings Guidance)
+**An Enterprise-Grade Agentic System** featuring:
+* Multi-Agent Orchestration (Technicals, Fundamentals, Sentiment, Earnings)
+* Asynchronous Batch Processing
+* Multi-Tiered Cache-Aside Pattern (Granular TTLs)
 """)
 
 # --- SIDEBAR ---
@@ -25,12 +23,12 @@ with st.sidebar:
     
     st.divider()
     st.subheader("Your Portfolio")
-    default_tickers = "AAPL, NVDA, TSLA, AMD, MSFT"
-    ticker_input = st.text_area("Enter Tickers:", default_tickers, height=150)
+    default_tickers = "AAPL, MSFT, TSLA, NVDA, INTC"
+    ticker_input = st.text_area("Enter Tickers:", default_tickers, height=100)
     
     run_btn = st.button("🚀 Run AI Analysis", type="primary", use_container_width=True)
 
-# --- HELPER: SPARKLINE CHART ---
+# --- CHART HELPER ---
 def create_sparkline(data):
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -40,24 +38,23 @@ def create_sparkline(data):
     ))
     fig.update_layout(
         margin=dict(l=0, r=0, t=0, b=0), height=50,
-        xaxis_visible=False, yaxis_visible=False,
-        showlegend=False
+        xaxis_visible=False, yaxis_visible=False, showlegend=False
     )
     return fig
 
-# --- MAIN LOGIC ---
+# --- MAIN EXECUTION ---
 if run_btn:
     if not os.environ.get("GROQ_API_KEY"):
         st.error("⚠️ Please enter a Groq API Key.")
     else:
         tickers = [t.strip().upper() for t in ticker_input.split(",") if t.strip()]
         
-        with st.status(f"🤖 4 Agents Analyzing {len(tickers)} stocks...", expanded=True) as status:
+        with st.status(f"🤖 Processing {len(tickers)} stocks asynchronously...", expanded=True) as status:
             results = asyncio.run(run_portfolio_analysis(tickers))
-            status.update(label="✅ Analysis Complete!", state="complete", expanded=False)
+            status.update(label=f"✅ Successfully analyzed {len(results)} stocks!", state="complete", expanded=False)
 
         st.divider()
-        cols = st.columns(2) # Grid Layout
+        cols = st.columns(2) 
         
         for i, r in enumerate(results):
             col = cols[i % 2]
@@ -72,27 +69,23 @@ if run_btn:
                     c1.markdown(f"### {r['ticker']}")
                     c2.markdown(f"<h3 style='text-align: right; color: {color};'>{final_v}</h3>", unsafe_allow_html=True)
                     
-                    # Metrics Row
+                    # Core Metrics
                     m1, m2, m3, m4 = st.columns(4)
                     m1.metric("RSI", r['tech']['rsi'])
                     m2.metric("PE Ratio", r['fund']['metrics'].get('PE Ratio', 'N/A'))
                     m3.metric("Sentiment", "Bullish" if "BULLISH" in r['sent'] else "Bearish" if "BEARISH" in r['sent'] else "Neutral")
                     m4.metric("Technicals", r['tech']['signal'])
                     
-                    # Sparkline
                     st.plotly_chart(create_sparkline(r['tech']), use_container_width=True)
+                    st.info(f"**Chairman's Rationale:** {r['verdict']}")
                     
-                    # Chairman's Rationale
-                    st.info(f"**Chairman's Verdict:** {r['verdict']}")
-                    
-                    # Detailed Reports
+                    # Deep Dive Reports
                     with st.expander("🔍 View All 4 Agent Reports"):
                         st.markdown("**1️⃣ Technical Analyst:**")
                         for s in r['tech']['details']: st.caption(f"• {s}")
                         
                         st.markdown("**2️⃣ Fundamental Analyst:**")
                         st.caption(f"{r['fund']['verdict']}")
-                        st.json(r['fund']['metrics'])
                         
                         st.markdown("**3️⃣ Sentiment Analyst:**")
                         st.caption(r['sent'])

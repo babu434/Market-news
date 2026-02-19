@@ -513,3 +513,13 @@ The results from these three are then fed into a 'Chairman' LLM that synthesizes
 Final Verdict
 
 This project is Interview Ready. It touches on all the key themes of 2024/2025 AI Engineering: Agents, RAG, Tool Use, and Cost Optimization.
+
+
+The Interview Question,"❌ The ""Trap"" Answer (Avoid)","✅ The ""Senior"" Answer (Use this)"
+"""Explain the architecture of your system.""","""I coordinated different teams. It has a pandas agent, a news agent, and a chairman.""","""It’s a Multi-Agent Orchestration. I deliberately separated Deterministic math (pandas) from Probabilistic reasoning (LLM) and aggregated them via a Hub-and-Spoke Chairman agent."""
+"""How did you handle 100 stocks at once?""","""I used an asynchronous system to make it run really fast and not break the API.""","""The workload is heavily I/O-bound, so I used Python’s asyncio on a single event loop. I used a Semaphore to strictly control concurrency and prevent API rate-limiting."""
+"""What if one stock fails in the batch?""","""I would send a notification or rerun it.""","""I handle this gracefully using return_exceptions=True in gather, which isolates the failure. In production, I’d push failed payloads to a Dead Letter Queue (DLQ) for later inspection."""
+"""How do you monitor LLM performance?""","""I read the APM logs and look at the JSON files.""","""I use Distributed Tracing to separate network latency from LLM compute time. I also use LangSmith to trace the exact prompt-response chain to debug hallucinations."""
+"""How do you scale to 10k users?""","""I would rewrite it in JavaScript and put it on AWS.""","""I’d decouple the monolith. The UI becomes a Next.js app, the backend becomes a stateless FastAPI service, and heavy jobs are pushed to an SQS message queue processed by Celery workers."""
+"""How do you handle API keys in Docker?""","""I copy my .env file into the container.""","""I never bake secrets into the image history. I use a multi-stage build for size, and inject keys at runtime using Kubernetes Secrets."""
+"""How do you fix high API costs?""","""I would use a database like Postgres to save it.""","""I use a Cache-Aside pattern with Redis. Crucially, I use Granular TTLs—caching prices for 5 minutes, but fundamentals for 24 hours, heavily reducing redundant token usage."""
